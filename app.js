@@ -1,0 +1,341 @@
+/* Evolution Game — web port of Oyun.py (Kivy)
+ * Rules kept 1:1:
+ *  - 6x6, start with 3x MICRO, 2x ANIMAL, 1x HUMAN on 6 random cells
+ *  - click empty -> random MICRO/ANIMAL, then resolve_merges (orthogonal, first match, random survivor, chain)
+ *  - HUMAN never merges. Score = M*1 + A*2 + H*5
+ */
+(function () {
+  "use strict";
+
+  var GRID_SIZE = 6;
+  var EMPTY = 0, MICRO = 1, ANIMAL = 2, HUMAN = 3;
+
+  var POINTS = {};
+  POINTS[EMPTY] = 0; POINTS[MICRO] = 1; POINTS[ANIMAL] = 2; POINTS[HUMAN] = 5;
+
+  var CLASS = {};
+  CLASS[EMPTY] = "empty"; CLASS[MICRO] = "micro"; CLASS[ANIMAL] = "animal"; CLASS[HUMAN] = "human";
+  var TEXT = {};
+  TEXT[EMPTY] = ""; TEXT[MICRO] = "M"; TEXT[ANIMAL] = "A"; TEXT[HUMAN] = "H";
+  var FULL_NAME = {};
+  FULL_NAME[MICRO] = "Micro"; FULL_NAME[ANIMAL] = "Animal"; FULL_NAME[HUMAN] = "Human";
+
+  // ---------- state ----------
+  var board = [];
+  var cellEls = [];
+  var gameOver = false;
+  var gameId = 0;
+  var lastSavedGameId = -1;
+  var activeTab = "global";
+
+  // ---------- dom ----------
+  var gridEl = document.getElementById("grid");
+  var scoreEl = document.getElementById("score");
+  var bestEl = document.getElementById("best");
+  var globalBestEl = document.getElementById("globalBest");
+  var statusEl = document.getElementById("status");
+  var nameInput = document.getElementById("playerName");
+  var leaderboardEl = document.getElementById("leaderboard");
+  var configNotice = document.getElementById("configNotice");
+
+  var cfg = (window.EVO_CONFIG || {});
+  var SUPABASE_URL = (cfg.SUPABASE_URL || "").replace(/\/$/, "");
+  var SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
+  var LIMIT = cfg.LEADERBOARD_LIMIT || 10;
+  var globalConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+  // ---------- storage keys ----------
+  var LS_BEST = "evo_best";
+  var LS_TOP = "evo_local_top";
+  var LS_NAME = "evo_name";
+
+  function getBest() {
+    return parseInt(localStorage.getItem(LS_BEST) || "0", 10) || 0;
+  }
+  function setBest(v) {
+    localStorage.setItem(LS_BEST, String(v));
+    bestEl.textContent = String(v);
+  }
+  function getLocalTop() {
+    try { return JSON.parse(localStorage.getItem(LS_TOP) || "[]"); }
+    catch (e) { return []; }
+  }
+  function addLocalScore(name, score) {
+    var top = getLocalTop();
+    top.push({ name: name, score: score, date: new Date().toISOString() });
+    top.sort(function (a, b) { return b.score - a.score; });
+    top = top.slice(0, 10);
+    localStorage.setItem(LS_TOP, JSON.stringify(top));
+    return top;
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  // ---------- core game (port of Oyun.py) ----------
+  function shuffled(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+
+  function startGame() {
+    board = [];
+    for (var r = 0; r < GRID_SIZE; r++) {
+      board.push([EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY]);
+    }
+    // _start_game port
+    var itemPool = shuffled([MICRO, MICRO, MICRO, ANIMAL, ANIMAL, HUMAN]);
+    var allCoords = [];
+    for (var rr = 0; rr < GRID_SIZE; rr++)
+      for (var cc = 0; cc < GRID_SIZE; cc++) allCoords.push([rr, cc]);
+    shuffled(allCoords);
+    var starts = allCoords.slice(0, 6);
+    for (var i = 0; i < 6; i++) {
+      board[starts[i][0]][starts[i][1]] = itemPool[i];
+    }
+    gameOver = false;
+    gameId++;
+    buildGrid();
+    updateGui();
+    setStatus("Place Micro / Animal on any empty cell.");
+  }
+
+  function buildGrid() {
+    gridEl.innerHTML = "";
+    cellEls = [];
+    for (var r = 0; r < GRID_SIZE; r++) {
+      var row = [];
+      for (var c = 0; c < GRID_SIZE; c++) {
+        (function (rr, cc) {
+          var b = document.createElement("button");
+          b.className = "cell empty";
+          b.setAttribute("aria-label", "cell " + rr + "," + cc);
+          b.addEventListener("click", function () { onClick(rr, cc); });
+          gridEl.appendChild(b);
+          row.push(b);
+        })(r, c);
+      }
+      cellEls.push(row);
+    }
+  }
+
+  function onClick(r, c) {
+    if (gameOver) { setStatus("Game over — press New Game or save your score."); return; }
+    if (board[r][c] !== EMPTY) return;
+    var newItem = Math.random() < 0.5 ? MICRO : ANIMAL;
+    board[r][c] = newItem;
+    var evolved = [];
+    resolveMerges(r, c, evolved);
+    updateGui(evolved);
+    if (evolved.length) {
+      var last = evolved[evolved.length - 1];
+      setStatus("Evolved to " + FULL_NAME[last.to] + "! (+" + (POINTS[last.to] * last.count - 0) + " pts cell value) Keep going.");
+    }
+    checkGameOver();
+  }
+
+  // Exact port of resolve_merges: first orthogonal match, random survivor, recurse.
+  function resolveMerges(r, c, evolved) {
+    var current = board[r][c];
+    if (current === HUMAN || current === EMPTY) return;
+    var dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (var i = 0; i < dirs.length; i++) {
+      var nr = r + dirs[i][0], nc = c + dirs[i][1];
+      if (nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE) continue;
+      if (board[nr][nc] === current) {
+        var newType = current + 1;
+        var keepFirst = Math.random() < 0.5;
+        var kr = keepFirst ? r : nr, kc = keepFirst ? c : nc;
+        var xr = keepFirst ? nr : r, xc = keepFirst ? nc : c;
+        board[kr][kc] = newType;
+        board[xr][xc] = EMPTY;
+        if (evolved) evolved.push({ r: kr, c: kc, from: current, to: newType, count: 2 });
+        resolveMerges(kr, kc, evolved);
+        break;
+      }
+    }
+  }
+
+  function calcScore() {
+    var s = 0;
+    for (var r = 0; r < GRID_SIZE; r++)
+      for (var c = 0; c < GRID_SIZE; c++) s += POINTS[board[r][c]];
+    return s;
+  }
+
+  function updateGui(flash) {
+    var s = calcScore();
+    scoreEl.textContent = String(s);
+    if (s > getBest()) setBest(s);
+    for (var r = 0; r < GRID_SIZE; r++) {
+      for (var c = 0; c < GRID_SIZE; c++) {
+        var v = board[r][c];
+        var el = cellEls[r][c];
+        el.textContent = TEXT[v];
+        el.className = "cell " + CLASS[v];
+        if (gameOver) el.disabled = true;
+      }
+    }
+    if (flash) {
+      flash.forEach(function (f) {
+        var el = cellEls[f.r][f.c];
+        el.classList.remove("pop");
+        void el.offsetWidth;
+        el.classList.add("pop");
+      });
+    }
+  }
+
+  function isBoardFull() {
+    for (var r = 0; r < GRID_SIZE; r++)
+      for (var c = 0; c < GRID_SIZE; c++)
+        if (board[r][c] === EMPTY) return false;
+    return true;
+  }
+
+  function checkGameOver() {
+    if (isBoardFull()) {
+      gameOver = true;
+      for (var r = 0; r < GRID_SIZE; r++)
+        for (var c = 0; c < GRID_SIZE; c++) cellEls[r][c].disabled = true;
+      var s = calcScore();
+      setStatus("🏁 Board full — Game Over! Final score: " + s + ". Enter your name and press Save Score.");
+    }
+  }
+
+  // ---------- leaderboard ----------
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (m) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m];
+    });
+  }
+
+  function renderRows(rows, emptyMsg) {
+    leaderboardEl.innerHTML = "";
+    if (!rows.length) {
+      var li = document.createElement("li");
+      li.textContent = emptyMsg;
+      leaderboardEl.appendChild(li);
+      return;
+    }
+    rows.forEach(function (row, i) {
+      var li = document.createElement("li");
+      li.innerHTML = "<span>#" + (i + 1) + " <span class='name'>" +
+        escapeHtml(row.name) + "</span></span><span class='pts'>" + row.score + "</span>";
+      leaderboardEl.appendChild(li);
+    });
+  }
+
+  function renderLocal() {
+    renderRows(getLocalTop(), "No local scores yet — play and save!");
+  }
+
+  function supabaseHeaders(json) {
+    var h = { "apikey": SUPABASE_ANON_KEY, "Authorization": "Bearer " + SUPABASE_ANON_KEY };
+    if (json) h["Content-Type"] = "application/json";
+    return h;
+  }
+
+  function fetchGlobal() {
+    if (!globalConfigured) {
+      renderRows([], "Global leaderboard not configured yet. See README / supabase-setup.sql (5 min). Local scores work regardless.");
+      globalBestEl.textContent = "–";
+      return Promise.resolve([]);
+    }
+    leaderboardEl.innerHTML = "<li>Loading…</li>";
+    var url = SUPABASE_URL + "/rest/v1/scores?select=name,score,created_at&order=score.desc,created_at.asc&limit=" + LIMIT;
+    return fetch(url, { headers: supabaseHeaders(false) })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (rows) {
+        renderRows(rows, "No global scores yet — be the first!");
+        globalBestEl.textContent = rows.length ? String(rows[0].score) : "–";
+        return rows;
+      })
+      .catch(function (err) {
+        renderRows([], "Could not load global scores (" + err.message + "). Check config.js + RLS policies.");
+        globalBestEl.textContent = "–";
+        return [];
+      });
+  }
+
+  function submitGlobal(name, score) {
+    var url = SUPABASE_URL + "/rest/v1/scores";
+    return fetch(url, {
+      method: "POST",
+      headers: Object.assign({ "Prefer": "return=minimal" }, supabaseHeaders(true)),
+      body: JSON.stringify({ name: name, score: score })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+    });
+  }
+
+  function refreshBoard() {
+    if (activeTab === "global") fetchGlobal();
+    else renderLocal();
+  }
+
+  function saveScore() {
+    var score = calcScore();
+    if (score <= 0) { setStatus("Score is 0 — play a little first."); return; }
+    var name = (nameInput.value || "").trim().slice(0, 20);
+    if (!name) { setStatus("Enter your player name first, then Save Score."); nameInput.focus(); return; }
+    localStorage.setItem(LS_NAME, name);
+    if (lastSavedGameId === gameId) {
+      setStatus("Already saved for this game — press New Game for another entry.");
+      return;
+    }
+    addLocalScore(name, score);
+    lastSavedGameId = gameId;
+
+    if (!globalConfigured) {
+      setStatus("Saved locally: " + name + " — " + score + " pts. (Tip: connect Supabase for a shared global board.)");
+      if (activeTab === "local") renderLocal();
+      return;
+    }
+    setStatus("Saving " + score + " pts for " + name + "…");
+    submitGlobal(name, score)
+      .then(function () {
+        setStatus("✅ Saved! " + name + " — " + score + " pts on the global leaderboard.");
+        if (activeTab === "global") fetchGlobal();
+      })
+      .catch(function (err) {
+        setStatus("Saved locally, but global save failed (" + err.message + "). Check Supabase RLS.");
+        if (activeTab === "local") renderLocal();
+      });
+  }
+
+  // ---------- wiring ----------
+  document.getElementById("newGameBtn").addEventListener("click", function () {
+    startGame();
+    if (activeTab === "global") fetchGlobal(); else renderLocal();
+  });
+  document.getElementById("saveScoreBtn").addEventListener("click", saveScore);
+  document.getElementById("refreshBtn").addEventListener("click", refreshBoard);
+  document.getElementById("tabGlobal").addEventListener("click", function () {
+    activeTab = "global";
+    document.getElementById("tabGlobal").classList.add("active");
+    document.getElementById("tabLocal").classList.remove("active");
+    fetchGlobal();
+  });
+  document.getElementById("tabLocal").addEventListener("click", function () {
+    activeTab = "local";
+    document.getElementById("tabLocal").classList.add("active");
+    document.getElementById("tabGlobal").classList.remove("active");
+    renderLocal();
+  });
+
+  // init
+  bestEl.textContent = String(getBest());
+  nameInput.value = localStorage.getItem(LS_NAME) || "";
+  if (!globalConfigured) {
+    configNotice.classList.remove("hidden");
+    configNotice.textContent = "🌍 Global board offline — add your Supabase URL + anon key to config.js (see README). Local high scores work now.";
+  }
+  startGame();
+  fetchGlobal();
+})();
