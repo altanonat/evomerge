@@ -20,6 +20,29 @@
   var FULL_NAME = {};
   FULL_NAME[MICRO] = "Micro"; FULL_NAME[ANIMAL] = "Animal"; FULL_NAME[HUMAN] = "Human";
 
+  // Simple inline SVG figures (no external files, Pages-friendly).
+  var SVG = {};
+  SVG[MICRO] =
+    '<svg viewBox="0 0 32 32" aria-hidden="true">' +
+    '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+    '<path d="M6 7 C9 10, 10 12, 11 14"/>' +
+    '<path d="M26 7 C23 10, 22 12, 21 14"/>' +
+    '<circle cx="16" cy="19" r="8"/>' +
+    "</g>" +
+    '<g fill="currentColor"><circle cx="13.5" cy="18" r="1.6"/><circle cx="18.5" cy="18" r="1.6"/><circle cx="16" cy="22" r="1.6"/></g>' +
+    "</svg>";
+  SVG[ANIMAL] =
+    '<svg viewBox="0 0 32 32" aria-hidden="true">' +
+    '<g fill="currentColor">' +
+    '<ellipse cx="16" cy="21" rx="7" ry="5.2"/>' +
+    '<circle cx="8.5" cy="13.5" r="2.6"/><circle cx="16" cy="11" r="2.6"/><circle cx="23.5" cy="13.5" r="2.6"/>' +
+    "</g></svg>";
+  SVG[HUMAN] =
+    '<svg viewBox="0 0 32 32" aria-hidden="true">' +
+    '<g fill="currentColor"><circle cx="16" cy="9.5" r="4.6"/>' +
+    '<path d="M8 27c0-5.2 3.6-8.4 8-8.4s8 3.2 8 8.4c0 .8-.7 1.5-1.5 1.5h-13C8.7 28.5 8 27.8 8 27z"/>' +
+    "</g></svg>";
+
   // ---------- state ----------
   var board = [];
   var cellEls = [];
@@ -173,8 +196,9 @@
       for (var c = 0; c < GRID_SIZE; c++) {
         var v = board[r][c];
         var el = cellEls[r][c];
-        el.textContent = TEXT[v];
+        el.innerHTML = v === EMPTY ? "" : (SVG[v] + '<span class="cell-tag">' + TEXT[v] + "</span>");
         el.className = "cell " + CLASS[v];
+        el.setAttribute("aria-label", v === EMPTY ? "empty cell" : FULL_NAME[v]);
         if (gameOver) el.disabled = true;
       }
     }
@@ -240,10 +264,11 @@
 
   function fetchGlobal() {
     if (!globalConfigured) {
-      renderRows([], "Global leaderboard not configured yet. See README / supabase-setup.sql (5 min). Local scores work regardless.");
+      renderRows([], "Global leaderboard not configured yet — paste your Supabase URL + anon key into config.js, then push + hard-refresh. Local scores work regardless.");
       globalBestEl.textContent = "–";
       return Promise.resolve([]);
     }
+    // Debug helper: open DevTools console to see the exact failure.
     leaderboardEl.innerHTML = "<li>Loading…</li>";
     var url = SUPABASE_URL + "/rest/v1/scores?select=name,score,created_at&order=score.desc,created_at.asc&limit=" + LIMIT;
     return fetch(url, { headers: supabaseHeaders(false) })
@@ -252,12 +277,17 @@
         return res.json();
       })
       .then(function (rows) {
-        renderRows(rows, "No global scores yet — be the first!");
+        renderRows(rows, "Connected! No global scores yet — be the first to Save Score.");
         globalBestEl.textContent = rows.length ? String(rows[0].score) : "–";
         return rows;
       })
       .catch(function (err) {
-        renderRows([], "Could not load global scores (" + err.message + "). Check config.js + RLS policies.");
+        console.warn("[EvoMerge] global fetch failed:", err);
+        var hint = "Could not load global scores (" + err.message + "). Checklist: 1) supabase-setup.sql ran, 2) URL has no trailing /, 3) anon key correct, 4) you pushed config.js + hard-refreshed (Ctrl/Cmd+Shift+R).";
+        if (window.location.protocol === "file:") {
+          hint += " Note: you opened index.html via file:// — some browsers block fetch; use python3 -m http.server instead.";
+        }
+        renderRows([], hint);
         globalBestEl.textContent = "–";
         return [];
       });
@@ -334,7 +364,11 @@
   nameInput.value = localStorage.getItem(LS_NAME) || "";
   if (!globalConfigured) {
     configNotice.classList.remove("hidden");
-    configNotice.textContent = "🌍 Global board offline — add your Supabase URL + anon key to config.js (see README). Local high scores work now.";
+    configNotice.innerHTML = "🌍 Global board offline — your <b>config.js still has empty SUPABASE_URL / ANON_KEY</b>. " +
+      "Steps: Supabase → SQL Editor → run supabase-setup.sql → Settings → API → paste 2 values into config.js → push → hard-refresh. " +
+      "Press F12 → Console for details.";
+  } else {
+    console.log("[EvoMerge] Supabase configured, URL:", SUPABASE_URL);
   }
   startGame();
   fetchGlobal();

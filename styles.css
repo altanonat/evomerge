@@ -90,11 +90,32 @@ body {
 .cell {
   border: none;
   border-radius: 10px;
-  font-size: clamp(18px, 3.5vw, 26px);
   font-weight: 800;
   cursor: pointer;
   transition: transform .08s ease, filter .15s ease;
   min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 6px;
+  color: inherit;
+}
+.cell svg {
+  width: 68%;
+  height: 68%;
+  max-width: 40px;
+  max-height: 40px;
+  display: block;
+}
+.cell-tag {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  opacity: .75;
+  line-height: 1;
 }
 .cell.empty { background: var(--empty); }
 .cell.empty:hover { filter: brightness(.94); transform: scale(1.03); }
@@ -172,17 +193,19 @@ body {
 .leaderboard .pts { font-weight: 800; }
 
 .legend { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
+.legend-row { display: flex; align-items: center; gap: 4px; }
+.evo-chain { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 .chip {
   display: inline-flex;
-  width: 26px; height: 26px;
+  width: 30px; height: 30px;
   align-items: center; justify-content: center;
   border-radius: 8px;
-  font-weight: 800;
   margin-right: 6px;
-  color: white;
+  padding: 3px;
 }
+.chip svg { width: 100%; height: 100%; display: block; }
 .chip.micro { background: var(--micro); color: #1a2e05; }
-.chip.animal { background: var(--animal); }
-.chip.human { background: var(--human); }
+.chip.animal { background: var(--animal); color: white; }
+.chip.human { background: var(--human); color: white; }
 
 footer { color: #cbd5e1; text-align: center; margin-top: 14px; font-size: 13px; }
