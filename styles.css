@@ -141,6 +141,7 @@ body {
 }
 .btn.primary { background: #0f172a; color: white; border-color: #0f172a; }
 .btn.small { margin-top: 8px; width: 100%; }
+.side-panel .controls .btn.small { width: auto; flex: 1; margin-top: 8px; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 
 .save-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }

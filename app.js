@@ -1,9 +1,9 @@
-/* Evolution Game — web port of Oyun.py (Kivy), local-scores edition
+/* Evolution Game — web port of Oyun.py (Kivy), local + optional Supabase global scores
  * Rules kept 1:1:
  *  - 6x6, start with 3x MICRO, 2x ANIMAL, 1x HUMAN on 6 random cells
  *  - click empty -> random MICRO/ANIMAL, then resolve_merges (orthogonal, first match, random survivor, chain)
  *  - HUMAN never merges. Score = M*1 + A*2 + H*5
- * Scores: best + top 10 stored in localStorage on this device only. No server needed.
+ * Scores: best + top 10 in localStorage always; global Top 10 via Supabase when config.js is filled.
  */
 (function () {
   "use strict";
@@ -50,14 +50,23 @@
   var gameOver = false;
   var gameId = 0;
   var lastSavedGameId = -1;
+  var activeTab = "global";
 
   // ---------- dom ----------
   var gridEl = document.getElementById("grid");
   var scoreEl = document.getElementById("score");
   var bestEl = document.getElementById("best");
+  var globalBestEl = document.getElementById("globalBest");
   var statusEl = document.getElementById("status");
   var nameInput = document.getElementById("playerName");
   var leaderboardEl = document.getElementById("leaderboard");
+  var configNotice = document.getElementById("configNotice");
+
+  var cfg = (window.EVO_CONFIG || {});
+  var SUPABASE_URL = (cfg.SUPABASE_URL || "").replace(/\/$/, "");
+  var SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
+  var LIMIT = cfg.LEADERBOARD_LIMIT || 10;
+  var globalConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
   // ---------- storage keys (local only) ----------
   var LS_BEST = "evo_best";
@@ -221,19 +230,18 @@
     }
   }
 
-  // ---------- local leaderboard ----------
+  // ---------- leaderboards (local always, global when configured) ----------
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (m) {
       return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m];
     });
   }
 
-  function renderLocal() {
-    var rows = getLocalTop();
+  function renderRows(rows, emptyMsg) {
     leaderboardEl.innerHTML = "";
     if (!rows.length) {
       var li = document.createElement("li");
-      li.textContent = "No scores yet — play and press Save Score!";
+      li.textContent = emptyMsg;
       leaderboardEl.appendChild(li);
       return;
     }
@@ -243,6 +251,59 @@
         escapeHtml(row.name) + "</span></span><span class='pts'>" + row.score + "</span>";
       leaderboardEl.appendChild(item);
     });
+  }
+
+  function renderLocal() {
+    renderRows(getLocalTop(), "No local scores yet — play and press Save Score!");
+  }
+
+  function supabaseHeaders(json) {
+    var h = { "apikey": SUPABASE_ANON_KEY, "Authorization": "Bearer " + SUPABASE_ANON_KEY };
+    if (json) h["Content-Type"] = "application/json";
+    return h;
+  }
+
+  function fetchGlobal() {
+    if (!globalConfigured) {
+      renderRows([], "Global board not set up yet — add your Supabase keys to config.js (README step 3). Local scores below still work: click “Your Top 10”.");
+      if (globalBestEl) globalBestEl.textContent = "–";
+      return Promise.resolve([]);
+    }
+    leaderboardEl.innerHTML = "<li>Loading…</li>";
+    var url = SUPABASE_URL + "/rest/v1/scores?select=name,score,created_at&order=score.desc,created_at.asc&limit=" + LIMIT;
+    return fetch(url, { headers: supabaseHeaders(false) })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (rows) {
+        renderRows(rows, "Connected! No global scores yet — be the first to Save Score.");
+        if (globalBestEl) globalBestEl.textContent = rows.length ? String(rows[0].score) : "–";
+        return rows;
+      })
+      .catch(function (err) {
+        console.warn("[EvoMerge] global fetch failed:", err);
+        var hint = "Could not load global scores (" + err.message + "). Checklist: 1) supabase-setup.sql ran, 2) URL has no trailing /, 3) anon key correct, 4) pushed config.js + hard-refresh.";
+        if (window.location.protocol === "file:") hint += " You opened via file:// — use python3 -m http.server instead.";
+        renderRows([], hint);
+        if (globalBestEl) globalBestEl.textContent = "–";
+        return [];
+      });
+  }
+
+  function submitGlobal(name, score) {
+    return fetch(SUPABASE_URL + "/rest/v1/scores", {
+      method: "POST",
+      headers: Object.assign({ "Prefer": "return=minimal" }, supabaseHeaders(true)),
+      body: JSON.stringify({ name: name, score: score })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+    });
+  }
+
+  function refreshBoard() {
+    if (activeTab === "global") fetchGlobal();
+    else renderLocal();
   }
 
   function saveScore() {
@@ -257,27 +318,58 @@
     }
     addLocalScore(name, score);
     lastSavedGameId = gameId;
-    renderLocal();
-    setStatus("✅ Saved! " + name + " — " + score + " pts. Best on this browser: " + getBest() + ".");
+    if (!globalConfigured) {
+      if (activeTab === "local") renderLocal();
+      else fetchGlobal();
+      setStatus("✅ Saved locally: " + name + " — " + score + " pts. Add Supabase keys to also save globally.");
+      return;
+    }
+    setStatus("Saving " + score + " pts for " + name + "…");
+    submitGlobal(name, score)
+      .then(function () {
+        setStatus("✅ Saved! " + name + " — " + score + " pts locally + globally.");
+        refreshBoard();
+      })
+      .catch(function (err) {
+        setStatus("Saved locally, but global save failed (" + err.message + ").");
+        refreshBoard();
+      });
   }
 
   // ---------- wiring ----------
   document.getElementById("newGameBtn").addEventListener("click", function () {
     startGame();
-    renderLocal();
+    refreshBoard();
   });
   document.getElementById("saveScoreBtn").addEventListener("click", saveScore);
+  document.getElementById("refreshBtn").addEventListener("click", refreshBoard);
   document.getElementById("clearBtn").addEventListener("click", function () {
     localStorage.removeItem(LS_TOP);
     localStorage.setItem(LS_BEST, "0");
     bestEl.textContent = "0";
-    renderLocal();
+    if (activeTab === "local") renderLocal();
     setStatus("Local scores cleared.");
+  });
+  document.getElementById("tabGlobal").addEventListener("click", function () {
+    activeTab = "global";
+    document.getElementById("tabGlobal").classList.add("active");
+    document.getElementById("tabLocal").classList.remove("active");
+    fetchGlobal();
+  });
+  document.getElementById("tabLocal").addEventListener("click", function () {
+    activeTab = "local";
+    document.getElementById("tabLocal").classList.add("active");
+    document.getElementById("tabGlobal").classList.remove("active");
+    renderLocal();
   });
 
   // init
   bestEl.textContent = String(getBest());
   nameInput.value = localStorage.getItem(LS_NAME) || "";
+  if (!globalConfigured && configNotice) {
+    configNotice.classList.remove("hidden");
+    configNotice.textContent = "🌍 Global board offline — local scores work. To enable global: Supabase → run supabase-setup.sql → paste URL + anon key into config.js → push → hard-refresh.";
+  }
   startGame();
-  renderLocal();
+  fetchGlobal();
 })();
