@@ -158,6 +158,8 @@ body {
 .howto code { background: #f1f5f9; padding: 1px 6px; border-radius: 6px; }
 .port-note { color: var(--muted); font-size: 13px; }
 
+.panel-title { margin: 0 0 4px; font-size: 17px; }
+
 .tabs { display: flex; gap: 8px; }
 .tab {
   flex: 1;

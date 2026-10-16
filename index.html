@@ -19,13 +19,9 @@
           <span class="card-label">Score</span>
           <span class="card-value" id="score">0</span>
         </div>
-        <div class="card">
-          <span class="card-label">🏆 Best (you)</span>
-          <span class="card-value" id="best">0</span>
-        </div>
         <div class="card highlight">
-          <span class="card-label">🌍 Global best</span>
-          <span class="card-value" id="globalBest">–</span>
+          <span class="card-label">🏆 Best (this browser)</span>
+          <span class="card-value" id="best">0</span>
         </div>
       </div>
     </header>
@@ -44,7 +40,7 @@
           <label for="playerName">Player name</label>
           <input id="playerName" maxlength="20" placeholder="e.g. Onat" autocomplete="nickname" />
         </div>
-        <p class="hint">Game ends when the 6×6 board is full. Merges free up space, so keep evolving!</p>
+        <p class="hint">Game ends when the 6×6 board is full. Merges free up space, so keep evolving! Scores are saved on this device only.</p>
 
         <details class="howto">
           <summary>How to play</summary>
@@ -60,13 +56,9 @@
       </section>
 
       <aside class="side-panel">
-        <div class="tabs">
-          <button id="tabGlobal" class="tab active">🌍 Global Top 10</button>
-          <button id="tabLocal" class="tab">💻 Your Top 10</button>
-        </div>
-        <div id="configNotice" class="notice hidden"></div>
+        <h2 class="panel-title">🏆 Top 10 — this browser</h2>
         <ol id="leaderboard" class="leaderboard"></ol>
-        <button id="refreshBtn" class="btn small">⟳ Refresh</button>
+        <button id="clearBtn" class="btn small">🗑 Clear scores</button>
 
         <div class="legend">
           <div class="legend-row"><span class="chip micro"><svg viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 7 C9 10, 10 12, 11 14"/><path d="M26 7 C23 10, 22 12, 21 14"/><circle cx="16" cy="19" r="8"/></g><g fill="currentColor"><circle cx="13.5" cy="18" r="1.6"/><circle cx="18.5" cy="18" r="1.6"/><circle cx="16" cy="22" r="1.6"/></g></svg></span> Micro · 1 pt</div>
@@ -78,11 +70,10 @@
     </main>
 
     <footer>
-      <span>Static site · ready for GitHub Pages · scores via Supabase (free) + localStorage fallback</span>
+      <span>Static site · ready for GitHub Pages · scores saved locally in your browser</span>
     </footer>
   </div>
 
-  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
