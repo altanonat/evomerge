@@ -254,7 +254,7 @@
   }
 
   function renderLocal() {
-    renderRows(getLocalTop(), "No local scores yet — play and press Save Score!");
+    renderRows(getLocalTop(), "No scores yet.");
   }
 
   function supabaseHeaders(json) {
@@ -265,7 +265,7 @@
 
   function fetchGlobal() {
     if (!globalConfigured) {
-      renderRows([], "Global board not set up yet — add your Supabase keys to config.js (README step 3). Local scores below still work: click “Your Top 10”.");
+      renderRows([], "No scores yet.");
       if (globalBestEl) globalBestEl.textContent = "–";
       return Promise.resolve([]);
     }
@@ -277,15 +277,12 @@
         return res.json();
       })
       .then(function (rows) {
-        renderRows(rows, "Connected! No global scores yet — be the first to Save Score.");
+        renderRows(rows, "No scores yet.");
         if (globalBestEl) globalBestEl.textContent = rows.length ? String(rows[0].score) : "–";
         return rows;
       })
       .catch(function (err) {
-        console.warn("[EvoMerge] global fetch failed:", err);
-        var hint = "Could not load global scores (" + err.message + "). Checklist: 1) supabase-setup.sql ran, 2) URL has no trailing /, 3) anon key correct, 4) pushed config.js + hard-refresh.";
-        if (window.location.protocol === "file:") hint += " You opened via file:// — use python3 -m http.server instead.";
-        renderRows([], hint);
+        renderRows([], "Could not load scores.");
         if (globalBestEl) globalBestEl.textContent = "–";
         return [];
       });
@@ -321,17 +318,17 @@
     if (!globalConfigured) {
       if (activeTab === "local") renderLocal();
       else fetchGlobal();
-      setStatus("✅ Saved locally: " + name + " — " + score + " pts. Add Supabase keys to also save globally.");
+      setStatus("Saved: " + name + " — " + score + " pts.");
       return;
     }
-    setStatus("Saving " + score + " pts for " + name + "…");
+    setStatus("Saving…");
     submitGlobal(name, score)
       .then(function () {
-        setStatus("✅ Saved! " + name + " — " + score + " pts locally + globally.");
+        setStatus("Saved: " + name + " — " + score + " pts.");
         refreshBoard();
       })
       .catch(function (err) {
-        setStatus("Saved locally, but global save failed (" + err.message + ").");
+        setStatus("Saved locally.");
         refreshBoard();
       });
   }
@@ -366,10 +363,7 @@
   // init
   bestEl.textContent = String(getBest());
   nameInput.value = localStorage.getItem(LS_NAME) || "";
-  if (!globalConfigured && configNotice) {
-    configNotice.classList.remove("hidden");
-    configNotice.textContent = "🌍 Global board offline — local scores work. To enable global: Supabase → run supabase-setup.sql → paste URL + anon key into config.js → push → hard-refresh.";
-  }
+  if (configNotice) configNotice.classList.add("hidden");
   startGame();
   fetchGlobal();
 })();

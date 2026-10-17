@@ -44,18 +44,17 @@
           <label for="playerName">Player name</label>
           <input id="playerName" maxlength="20" placeholder="e.g. Onat" autocomplete="nickname" />
         </div>
-        <p class="hint">Game ends when the 6×6 board is full. Merges free up space, so keep evolving! Local scores always work; global needs Supabase (see README).</p>
+        <p class="hint">Game ends when the 6×6 board is full. Merges free up space, so keep evolving!</p>
 
         <details class="howto">
           <summary>How to play</summary>
           <ul>
             <li>Board starts with <b>3× M</b> (1 pt), <b>2× A</b> (2 pts), <b>1× H</b> (5 pts) on random cells.</li>
             <li>Click an <b>empty</b> cell → a random <b>M</b> or <b>A</b> spawns.</li>
-            <li>If an orthogonal neighbour (up/down/left/right) is the <b>same type</b>, they merge into the next stage: <b>M+M → A</b>, <b>A+A → H</b>.</li>
+            <li>If an orthogonal neighbour is the <b>same type</b>, they merge: <b>M+M → A</b>, <b>A+A → H</b>.</li>
             <li><b>H</b> is final and never merges.</li>
             <li>Score = sum of all cells (M=1, A=2, H=5).</li>
           </ul>
-          <p class="port-note">Faithful port of <code>Oyun.py</code> (Kivy) game logic, including random merge survivor and chained merges.</p>
         </details>
       </section>
 
@@ -79,10 +78,6 @@
         <p class="evo-chain" aria-label="evolution chain">🦠 → 🐾 → 🧑&nbsp;&nbsp;·&nbsp;&nbsp;M + M → A · A + A → H</p>
       </aside>
     </main>
-
-    <footer>
-      <span>Static site · ready for GitHub Pages · local scores + optional Supabase global board</span>
-    </footer>
   </div>
 
   <script src="config.js"></script>
